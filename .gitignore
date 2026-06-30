@@ -6,3 +6,4 @@ exports/
 *.log
 PUBLIC_URL.txt
 *.tsbuildinfo
+*.pid
