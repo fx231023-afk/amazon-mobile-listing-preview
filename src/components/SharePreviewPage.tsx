@@ -33,6 +33,14 @@ export function SharePreviewPage({ shareId }: SharePreviewPageProps) {
   const [activeIndex, setActiveIndex] = useState(0);
 
   useEffect(() => {
+    document.body.classList.add('share-preview-body');
+
+    return () => {
+      document.body.classList.remove('share-preview-body');
+    };
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
 
     async function loadShare() {

@@ -30,5 +30,6 @@ describe('SharePreviewPage', () => {
 
     expect(await screen.findByText('Partial shared listing')).toBeInTheDocument();
     expect(screen.getByText(/VILLAPOOL/)).toBeInTheDocument();
+    expect(document.body).toHaveClass('share-preview-body');
   });
 });
