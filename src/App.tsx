@@ -204,23 +204,6 @@ export default function App() {
     }
   };
 
-  const saveScreenshotToProject = async (dataUrl: string, fileName: string): Promise<string> => {
-    const response = await fetch('/api/save-screenshot', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ dataUrl, fileName })
-    });
-    const result = (await response.json()) as { ok: boolean; path?: string; error?: string };
-
-    if (!response.ok || !result.ok || !result.path) {
-      throw new Error(result.error || '保存到项目文件夹失败');
-    }
-
-    return result.path;
-  };
-
   const exportPhoneScreenshot = async () => {
     const target = document.getElementById('phone-capture-target');
     if (!target) {
@@ -244,15 +227,8 @@ export default function App() {
       const fileName = `amazon-mobile-preview-${Date.now()}.png`;
       setExportPreviewUrl(dataUrl);
       setExportFileName(fileName);
-
-      try {
-        const savedPath = await saveScreenshotToProject(dataUrl, fileName);
-        setExportProjectPath(savedPath);
-        setExportStatus('截图已生成，并已保存到服务器备份');
-      } catch {
-        setExportProjectPath('');
-        setExportStatus('截图已生成；服务器备份失败，请使用右侧保存按钮或右键另存');
-      }
+      setExportProjectPath('');
+      setExportStatus('截图已生成，已尝试在浏览器下载');
 
       const link = document.createElement('a');
       link.download = fileName;
@@ -264,22 +240,7 @@ export default function App() {
   };
 
   const saveExportToProject = async () => {
-    if (!exportPreviewUrl) {
-      setExportStatus('请先生成截图');
-      return;
-    }
-
-    try {
-      setExportStatus('正在保存到服务器备份...');
-      const savedPath = await saveScreenshotToProject(
-        exportPreviewUrl,
-        exportFileName || `amazon-mobile-preview-${Date.now()}.png`
-      );
-      setExportProjectPath(savedPath);
-      setExportStatus('截图已保存到服务器备份');
-    } catch {
-      setExportStatus('保存到服务器文件夹失败，请稍后重试');
-    }
+    setExportStatus('线上版不保存服务器备份，请使用下载或选择位置保存');
   };
 
   const saveExportToFile = async () => {

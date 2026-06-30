@@ -16,7 +16,7 @@ describe('CheckPanel export preview', () => {
         exportStatus="Screenshot ready"
         exportPreviewUrl="data:image/png;base64,preview"
         exportFileName="amazon-mobile-preview-test.png"
-        exportProjectPath="D:/codex/amazon-mobile-listing-preview/exports/amazon-mobile-preview-test.png"
+        exportProjectPath=""
         shareStatus=""
         shareUrl=""
         shareExpiresAt=""
@@ -42,9 +42,6 @@ describe('CheckPanel export preview', () => {
     expect(downloadLink).toHaveAttribute('download', 'amazon-mobile-preview-test.png');
 
     expect(screen.getByRole('button', { name: '选择位置保存截图' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '保存到服务器备份' })).toBeInTheDocument();
-    expect(
-      screen.getByText('D:/codex/amazon-mobile-listing-preview/exports/amazon-mobile-preview-test.png')
-    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '保存到服务器备份' })).not.toBeInTheDocument();
   });
 });

@@ -146,9 +146,6 @@ export function CheckPanel({
           <div className="export-preview">
             <img src={exportPreviewUrl} alt="Exported phone screenshot preview" />
             <div className="export-preview-actions">
-              <button type="button" onClick={onSaveExportToProject}>
-                保存到服务器备份
-              </button>
               <button type="button" onClick={onSaveExport}>
                 选择位置保存截图
               </button>

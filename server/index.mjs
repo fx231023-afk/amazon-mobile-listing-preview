@@ -1,21 +1,16 @@
 import http from 'node:http';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   cleanupExpiredShares,
   createShareRecord,
-  getImageContentType,
-  getShareAssetPath,
-  readShareRecord,
-  sanitizePathPart
+  readShareRecord
 } from './shareStore.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
 const distDir = path.join(rootDir, 'dist');
-const sharesDir = path.resolve(process.env.SHARES_DIR || path.join(rootDir, 'temp-shares'));
-const exportsDir = path.resolve(process.env.EXPORTS_DIR || path.join(rootDir, 'exports'));
 const port = Number(process.env.PORT || 4173);
 const maxBodyBytes = Number(process.env.MAX_BODY_MB || 80) * 1024 * 1024;
 
@@ -70,7 +65,7 @@ async function readJson(request) {
 async function handleCreateShare(request, response) {
   try {
     const payload = await readJson(request);
-    const record = await createShareRecord({ sharesDir, payload });
+    const record = await createShareRecord({ payload });
     sendJson(response, 200, {
       ok: true,
       id: record.id,
@@ -88,8 +83,8 @@ async function handleCreateShare(request, response) {
 
 async function handleReadShare(shareId, response) {
   try {
-    await cleanupExpiredShares(sharesDir);
-    const record = await readShareRecord(sharesDir, shareId);
+    await cleanupExpiredShares();
+    const record = await readShareRecord(null, shareId);
     sendJson(response, 200, { ok: true, share: record });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Share not found';
@@ -97,43 +92,12 @@ async function handleReadShare(shareId, response) {
   }
 }
 
-async function handleShareAsset(url, response) {
-  try {
-    await cleanupExpiredShares(sharesDir);
-    const parts = url.pathname.split('/').filter(Boolean);
-    const shareId = parts[1];
-    const fileName = parts[2];
-    const filePath = getShareAssetPath(sharesDir, shareId, fileName);
-    const file = await readFile(filePath);
-    response.writeHead(200, {
-      'Content-Type': getImageContentType(fileName),
-      'Cache-Control': 'private, max-age=86400'
-    });
-    response.end(file);
-  } catch {
-    sendText(response, 404, 'Not found');
-  }
-}
-
 async function handleSaveScreenshot(request, response) {
-  try {
-    const payload = await readJson(request);
-    if (!payload.dataUrl?.startsWith('data:image/png;base64,')) {
-      sendJson(response, 400, { ok: false, error: 'Invalid PNG data' });
-      return;
-    }
-
-    const safeFileName = sanitizePathPart(payload.fileName || `amazon-mobile-preview-${Date.now()}.png`);
-    const outputPath = path.join(exportsDir, safeFileName || `amazon-mobile-preview-${Date.now()}.png`);
-    await mkdir(exportsDir, { recursive: true });
-    await writeFile(outputPath, Buffer.from(payload.dataUrl.split(',')[1], 'base64'));
-    sendJson(response, 200, { ok: true, path: outputPath.replace(/\\/g, '/') });
-  } catch (error) {
-    sendJson(response, 500, {
-      ok: false,
-      error: error instanceof Error ? error.message : 'Save failed'
-    });
-  }
+  request.resume();
+  sendJson(response, 410, {
+    ok: false,
+    error: 'Server screenshot storage is disabled. Please download in the browser.'
+  });
 }
 
 async function serveStatic(url, response) {
@@ -180,11 +144,6 @@ const server = http.createServer(async (request, response) => {
 
   if (request.method === 'GET' && url.pathname.startsWith('/api/shares/')) {
     await handleReadShare(url.pathname.split('/').filter(Boolean)[2], response);
-    return;
-  }
-
-  if (request.method === 'GET' && url.pathname.startsWith('/share-assets/')) {
-    await handleShareAsset(url, response);
     return;
   }
 

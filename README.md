@@ -10,6 +10,6 @@ pinned: false
 
 # Amazon Mobile Listing Preview
 
-Mobile Amazon listing preview tool for uploading gallery images and A+ images, editing product information, and generating 24-hour preview links.
+Mobile Amazon listing preview tool for uploading gallery images and A+ images, editing product information, and generating short-lived preview links.
 
-The app stores uploaded preview images temporarily in the running container. It is intended for quick team review, not long-term image storage.
+Shared preview data is kept only in process memory and is never written as server-side image files. Links are intended for immediate review and expire automatically, or earlier if the app restarts.
