@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { DEFAULT_LISTING_INFO, DEFAULT_SETTINGS } from '../data/defaultListing';
 import type { ShareRecord } from '../types';
+import { createLivePeer, type LiveDataConnection, type LivePeer } from '../lib/liveShare';
 import { PreviewPhone } from './PreviewPhone';
 
 interface SharePreviewPageProps {
   shareId: string;
+  mode?: 'stored' | 'live';
 }
 
 function normalizeShareRecord(share: ShareRecord): ShareRecord {
@@ -27,7 +29,7 @@ function normalizeShareRecord(share: ShareRecord): ShareRecord {
   };
 }
 
-export function SharePreviewPage({ shareId }: SharePreviewPageProps) {
+export function SharePreviewPage({ shareId, mode = 'stored' }: SharePreviewPageProps) {
   const [share, setShare] = useState<ShareRecord | null>(null);
   const [status, setStatus] = useState('正在加载预览...');
   const [activeIndex, setActiveIndex] = useState(0);
@@ -42,6 +44,54 @@ export function SharePreviewPage({ shareId }: SharePreviewPageProps) {
 
   useEffect(() => {
     let cancelled = false;
+    let peer: LivePeer | null = null;
+    let connection: LiveDataConnection | null = null;
+
+    async function loadLiveShare() {
+      try {
+        setStatus('正在连接电脑端实时预览...');
+        peer = await createLivePeer();
+
+        peer.on('open', () => {
+          if (!peer || cancelled) {
+            return;
+          }
+
+          connection = peer.connect(shareId, { reliable: true });
+          connection.on('open', () => {
+            setStatus('已连接，正在接收预览...');
+            connection?.send({ type: 'request-share' });
+          });
+          connection.on('data', (data: { type?: string; share?: ShareRecord }) => {
+            if (cancelled || data?.type !== 'share-record' || !data.share) {
+              return;
+            }
+            setShare(normalizeShareRecord(data.share));
+            setStatus('');
+          });
+          connection.on('close', () => {
+            if (!cancelled) {
+              setStatus('电脑端页面已关闭或连接中断，请重新生成实时分享链接。');
+            }
+          });
+          connection.on('error', () => {
+            if (!cancelled) {
+              setStatus('实时预览连接失败，请确认电脑端页面保持打开。');
+            }
+          });
+        });
+
+        peer.on('error', () => {
+          if (!cancelled) {
+            setStatus('实时预览连接失败，请确认电脑端页面保持打开。');
+          }
+        });
+      } catch {
+        if (!cancelled) {
+          setStatus('实时预览连接失败，请刷新页面后重试。');
+        }
+      }
+    }
 
     async function loadShare() {
       try {
@@ -70,12 +120,18 @@ export function SharePreviewPage({ shareId }: SharePreviewPageProps) {
       }
     }
 
-    void loadShare();
+    if (mode === 'live') {
+      void loadLiveShare();
+    } else {
+      void loadShare();
+    }
 
     return () => {
       cancelled = true;
+      connection?.close();
+      peer?.destroy();
     };
-  }, [shareId]);
+  }, [mode, shareId]);
 
   if (!share) {
     return (

@@ -7,9 +7,10 @@ import { PreviewPhone } from './components/PreviewPhone';
 import { SharePreviewPage } from './components/SharePreviewPage';
 import { DEFAULT_LISTING_INFO, DEFAULT_SETTINGS } from './data/defaultListing';
 import { fileToUploadedImage } from './lib/fileImages';
+import { createLivePeer, type LiveDataConnection, type LivePeer } from './lib/liveShare';
 import { clampActiveIndex, moveItem } from './lib/listingUtils';
-import { blobToDataUrl } from './lib/shareUtils';
-import type { ListingInfo, PreviewSettings, SharedImage, UploadedImage } from './types';
+import { blobToDataUrl, createShareId, getShareExpiry } from './lib/shareUtils';
+import type { ListingInfo, PreviewSettings, SharedImage, ShareRecord, UploadedImage } from './types';
 import './App.css';
 
 const STORAGE_KEY = 'amazon-mobile-listing-preview-config';
@@ -73,11 +74,41 @@ function readStoredConfig(): StoredConfig {
 }
 
 export default function App() {
-  const shareMatch = window.location.pathname.match(/^\/p\/([^/]+)$/);
+  const [route, setRoute] = useState(() => ({
+    pathname: window.location.pathname,
+    hash: window.location.hash
+  }));
+
+  useEffect(() => {
+    const updateRoute = () => {
+      setRoute({
+        pathname: window.location.pathname,
+        hash: window.location.hash
+      });
+    };
+
+    window.addEventListener('hashchange', updateRoute);
+    window.addEventListener('popstate', updateRoute);
+    return () => {
+      window.removeEventListener('hashchange', updateRoute);
+      window.removeEventListener('popstate', updateRoute);
+    };
+  }, []);
+
+  const liveMatch = route.hash.match(/^#\/live\/([^/]+)$/);
+  if (liveMatch) {
+    return <SharePreviewPage shareId={liveMatch[1]} mode="live" />;
+  }
+
+  const shareMatch = route.pathname.match(/^\/p\/([^/]+)$/);
   if (shareMatch) {
     return <SharePreviewPage shareId={shareMatch[1]} />;
   }
 
+  return <EditorApp />;
+}
+
+function EditorApp() {
   const stored = useMemo(readStoredConfig, []);
   const [listing, setListing] = useState<ListingInfo>(stored.listing);
   const [settings, setSettings] = useState<PreviewSettings>(stored.settings);
@@ -92,6 +123,9 @@ export default function App() {
   const [shareUrl, setShareUrl] = useState('');
   const [shareExpiresAt, setShareExpiresAt] = useState('');
   const imagesRef = useRef({ galleryImages, aplusImages });
+  const livePeerRef = useRef<LivePeer | null>(null);
+  const liveConnectionsRef = useRef<LiveDataConnection[]>([]);
+  const liveRecordRef = useRef<ShareRecord | null>(null);
 
   useEffect(() => {
     const config: StoredConfig = { listing, settings };
@@ -112,6 +146,8 @@ export default function App() {
       [...currentImages.galleryImages, ...currentImages.aplusImages].forEach((image) =>
         URL.revokeObjectURL(image.url)
       );
+      liveConnectionsRef.current.forEach((connection) => connection.close());
+      livePeerRef.current?.destroy();
     };
   }, []);
 
@@ -160,47 +196,82 @@ export default function App() {
     };
   };
 
+  const createShareRecordForLivePreview = async (): Promise<ShareRecord> => {
+    const [sharedGalleryImages, sharedAplusImages] = await Promise.all([
+      Promise.all(galleryImages.map(imageToShareImage)),
+      Promise.all(aplusImages.map(imageToShareImage))
+    ]);
+    const createdAtMs = Date.now();
+
+    return {
+      id: createShareId(8),
+      createdAt: new Date(createdAtMs).toISOString(),
+      expiresAt: getShareExpiry(createdAtMs),
+      listing,
+      settings,
+      galleryImages: sharedGalleryImages.map((image) => ({
+        ...image,
+        url: image.dataUrl ?? image.url
+      })),
+      aplusImages: sharedAplusImages.map((image) => ({
+        ...image,
+        url: image.dataUrl ?? image.url
+      }))
+    };
+  };
+
+  const sendLiveRecord = (connection: LiveDataConnection) => {
+    const currentRecord = liveRecordRef.current;
+    if (!currentRecord || !connection.open) {
+      return;
+    }
+    connection.send({ type: 'share-record', share: currentRecord });
+  };
+
   const createTemporaryShare = async () => {
-    setShareStatus('正在生成分享链接...');
+    setShareStatus('正在生成实时分享链接...');
     setShareUrl('');
     setShareExpiresAt('');
 
     try {
-      const [sharedGalleryImages, sharedAplusImages] = await Promise.all([
-        Promise.all(galleryImages.map(imageToShareImage)),
-        Promise.all(aplusImages.map(imageToShareImage))
-      ]);
+      const record = await createShareRecordForLivePreview();
+      const peerId = `amp-${record.id}`;
+      const peer = await createLivePeer(peerId);
 
-      const response = await fetch('/api/shares', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          listing,
-          settings,
-          galleryImages: sharedGalleryImages,
-          aplusImages: sharedAplusImages
-        })
+      await new Promise<void>((resolve, reject) => {
+        const timer = window.setTimeout(() => reject(new Error('Live preview connection timed out')), 12000);
+        peer.on('open', () => {
+          window.clearTimeout(timer);
+          resolve();
+        });
+        peer.on('error', (error) => {
+          window.clearTimeout(timer);
+          reject(error instanceof Error ? error : new Error('Live preview failed'));
+        });
       });
-      const result = (await response.json()) as {
-        ok: boolean;
-        url?: string;
-        expiresAt?: string;
-        error?: string;
-      };
 
-      if (!response.ok || !result.ok || !result.url || !result.expiresAt) {
-        throw new Error(result.error || '生成分享链接失败');
-      }
+      liveConnectionsRef.current.forEach((connection) => connection.close());
+      liveConnectionsRef.current = [];
+      livePeerRef.current?.destroy();
+      livePeerRef.current = peer;
+      liveRecordRef.current = record;
 
-      const fullUrl = `${window.location.origin}${result.url}`;
+      peer.on('connection', (connection: LiveDataConnection) => {
+        liveConnectionsRef.current = [...liveConnectionsRef.current, connection];
+        connection.on('open', () => sendLiveRecord(connection));
+        connection.on('data', () => sendLiveRecord(connection));
+        connection.on('close', () => {
+          liveConnectionsRef.current = liveConnectionsRef.current.filter((item) => item !== connection);
+        });
+      });
+
+      const fullUrl = `${window.location.origin}${window.location.pathname}#/live/${peerId}`;
       setShareUrl(fullUrl);
-      setShareExpiresAt(result.expiresAt);
-      setShareStatus('分享链接已生成，24 小时后自动失效');
+      setShareExpiresAt(record.expiresAt);
+      setShareStatus('实时分享链接已生成；请保持这个电脑页面打开，手机可立即查看');
       void navigator.clipboard?.writeText(fullUrl);
     } catch {
-      setShareStatus('生成失败，请刷新页面后重新尝试');
+      setShareStatus('实时分享生成失败，请检查网络后刷新页面重试');
     }
   };
 

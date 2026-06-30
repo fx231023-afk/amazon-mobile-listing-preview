@@ -365,5 +365,6 @@ function localScreenshotSaver() {
     };
 }
 export default defineConfig({
+    base: './',
     plugins: [react(), localScreenshotSaver()]
 });

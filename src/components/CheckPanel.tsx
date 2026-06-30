@@ -110,7 +110,7 @@ export function CheckPanel({
       <section className="panel-card actions-card">
         <button className="tool-button primary" type="button" onClick={onCreateShare}>
           <Camera size={17} />
-          生成 24 小时分享链接
+          生成实时手机预览链接
         </button>
         {shareStatus && <div className="export-status">{shareStatus}</div>}
         {shareUrl && (
@@ -126,7 +126,7 @@ export function CheckPanel({
             >
               复制链接
             </button>
-            {shareExpiresAt && <small>24 小时后失效：{new Date(shareExpiresAt).toLocaleString()}</small>}
+            {shareExpiresAt && <small>电脑页面关闭后失效，最晚失效：{new Date(shareExpiresAt).toLocaleString()}</small>}
           </div>
         )}
         <button className="tool-button primary" type="button" onClick={onExport}>

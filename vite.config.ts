@@ -261,5 +261,6 @@ function localScreenshotSaver(): Plugin {
 }
 
 export default defineConfig({
+  base: './',
   plugins: [react(), localScreenshotSaver()]
 });
